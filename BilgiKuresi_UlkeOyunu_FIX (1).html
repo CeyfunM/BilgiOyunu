@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>Bilgi Küresi — Ülkeleri Bul (Düzeltilmiş)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; background: radial-gradient(1200px 600px at 70% -10%, #0b132b 0%, #000814 60%); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; color: #e6edf3; overflow: hidden; }
+    #scene { position: absolute; inset: 0; }
+    .hud { position: fixed; top: 12px; left: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; z-index: 10; user-select: none; }
+    .hud .card { background: rgba(255,255,255,0.06); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 10px 14px; box-shadow: 0 8px 20px rgba(0,0,0,0.25); }
+    .score { font-weight: 700; letter-spacing: 0.3px; }
+    .qno { opacity: 0.85; }
+    .btn { cursor: pointer; background: linear-gradient(135deg, #4cc9f0, #4361ee); color: white; border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 700; box-shadow: 0 8px 18px rgba(67,97,238,0.35); transition: transform .06s ease, filter .2s ease; }
+    .btn:disabled { cursor: not-allowed; opacity: 0.6; filter: grayscale(0.3); }
+    .btn:active { transform: translateY(1px) scale(0.99); }
+    .btn.secondary { background: rgba(255,255,255,0.08); box-shadow: none; border: 1px solid rgba(255,255,255,0.15); }
+    .question { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); width: min(920px, calc(100% - 24px)); background: rgba(10, 14, 24, 0.75); border: 1px solid rgba(255,255,255,0.12); backdrop-filter: blur(8px); border-radius: 18px; padding: 16px 18px; z-index: 10; box-shadow: 0 12px 28px rgba(0,0,0,0.35); }
+    .question h2 { font-size: clamp(16px, 1.8vw, 20px); margin: 0 0 6px 0; font-weight: 800; }
+    .question p { margin: 0; opacity: 0.95; line-height: 1.4; }
+    .question .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0.98); opacity: 0; pointer-events: none; z-index: 20; padding: 14px 18px; border-radius: 14px; background: rgba(9, 20, 46, 0.92); border: 1px solid rgba(255,255,255,0.16); box-shadow: 0 16px 40px rgba(0,0,0,0.5); font-weight: 800; letter-spacing: .2px; transition: opacity .15s ease, transform .15s ease; white-space: nowrap; }
+    .toast.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+    .legend { position: fixed; right: 12px; top: 12px; z-index: 10; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 10px 12px; font-size: 12px; }
+    .legend .row { display:flex; align-items:center; gap:8px; margin: 6px 0; }
+    .dot { width: 14px; height: 14px; border-radius: 50%; display:inline-block; }
+    .dot.sel { background:#ffd166; }
+    .dot.true { background:#06d6a0; }
+    .dot.hilite { background:#f94144; }
+    .overlay { position: absolute; inset: 0; backdrop-filter: blur(8px); background: radial-gradient(500px 350px at 70% -10%, rgba(76,201,240,0.15), rgba(0,0,0,0.6)); display: grid; place-items: center; z-index: 30; }
+    .overlay .panel { background: rgba(10, 14, 24, 0.85); border: 1px solid rgba(255,255,255,0.16); border-radius: 18px; padding: 20px 22px; width: min(720px, calc(100% - 24px)); box-shadow: 0 16px 40px rgba(0,0,0,0.55); text-align: center; }
+    .panel h1 { margin: 0 0 10px 0; font-size: clamp(22px, 3vw, 32px); }
+    .panel p { margin: 6px 0; opacity: 0.9; }
+    .hidden { display: none; }
+    .muted { opacity: .8 }
+    a, a:visited { color: #4cc9f0; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div id="scene"></div>
+
+  <div class="hud">
+    <div class="card score">Puan: <span id="score">0</span></div>
+    <div class="card qno">Soru: <span id="qno">-</span></div>
+    <button class="btn secondary" id="skipBtn" title="Soruyu pas geç" disabled>Pas Geç</button>
+    <button class="btn secondary" id="recenterBtn" title="Küreyi ortala" disabled>Ortala</button>
+  </div>
+
+  <div class="legend">
+    <div class="row"><span class="dot sel"></span> Seçimin</div>
+    <div class="row"><span class="dot true"></span> Doğru Ülke</div>
+    <div class="row"><span class="dot hilite"></span> Yanıt sonrası vurgulanan ülke</div>
+  </div>
+
+  <div class="question" id="questionBox">
+    <h2 id="questionText">Veriler yükleniyor…</h2>
+    <p class="muted">İlk kez açılışta harita verileri indiriliyor.</p>
+    <div class="actions">
+      <button class="btn" id="startBtn" disabled>Başla</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="startOverlay">
+    <div class="panel">
+      <h1>Bilgi Küresi 🌍</h1>
+      <p><b>Doğru ülke</b>: +3 · <b>Komşu ülke</b>: +2 · <b>Farklı kıta</b>: +0.5 · <b>Diğer</b>: 0</p>
+      <p class="muted">Yanlışsa, küre 2 sn doğru ülkeye döner ve vurgular.</p>
+      <div class="actions" style="justify-content:center;margin-top:12px">
+        <button class="btn" id="bigStartBtn" disabled>Oyuna Başla</button>
+        <button class="btn secondary" id="howBtn">Nasıl oynanır?</button>
+      </div>
+      <p id="howText" class="hidden muted" style="margin-top:10px">Soruya göre ülkelerden birine tıkla. 
+      <b>Ortala</b> ile görüntüyü sıfırla, <b>Pas Geç</b> ile yeni soruya geç.</p>
+      <p class="muted" style="margin-top:10px;font-size:12px">Not: Harita ve kütüphaneler için internet gerekir.</p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three-globe@2.30.1/dist/three-globe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+  (function(){
+    const sceneEl = document.getElementById('scene');
+    const qText = document.getElementById('questionText');
+    const qnoEl = document.getElementById('qno');
+    const scoreEl = document.getElementById('score');
+    const startBtn = document.getElementById('startBtn');
+    const bigStartBtn = document.getElementById('bigStartBtn');
+    const startOverlay = document.getElementById('startOverlay');
+    const howBtn = document.getElementById('howBtn');
+    const howText = document.getElementById('howText');
+    const skipBtn = document.getElementById('skipBtn');
+    const recenterBtn = document.getElementById('recenterBtn');
+    const toast = document.getElementById('toast');
+
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    sceneEl.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, width/height, 0.1, 2000);
+    camera.position.z = 280;
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.minDistance = 160;
+    controls.maxDistance = 420;
+    controls.enablePan = false;
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(-100, 50, 130);
+    scene.add(dirLight);
+
+    // IMPORTANT: use explicit https URLs (file:// + protocol-relative breaks)
+    const globe = new ThreeGlobe()
+      .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+      .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+      .showGraticules(true)
+      .polygonAltitude(0.01)
+      .polygonCapColor(feat => {
+        if (highlightIds.has(getId(feat))) return 'rgba(249,65,68,0.9)';
+        if (feat === currentTarget) return 'rgba(6,214,160,0.8)';
+        if (feat === currentSelection) return 'rgba(255,209,102,0.85)';
+        return 'rgba(180,200,235,0.12)';
+      })
+      .polygonSideColor(() => 'rgba(0,0,0,0.2)')
+      .polygonStrokeColor(() => 'rgba(255,255,255,0.15)')
+      .onPolygonHover(hoverD => {
+        renderer.domElement.style.cursor = hoverD ? 'pointer' : 'default';
+      })
+      .onPolygonClick(handleClick);
+
+    scene.add(globe);
+
+    let countries = [];
+    let byName = new Map();
+    let restIndex = new Map();
+    let currentTarget = null;
+    let currentSelection = null;
+    let highlightIds = new Set();
+    let score = 0;
+    let qno = 0;
+    let running = false;
+    let dataReady = false;
+
+    function showToast(text){
+      toast.textContent = text;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1200);
+    }
+
+    function resize(){
+      width = window.innerWidth;
+      height = window.innerHeight;
+      renderer.setSize(width, height);
+      camera.aspect = width/height;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+
+    const deaccent = (s) => s.normalize('NFD').replace(/\p{Diacritic}/gu,'');
+    function normName(s){
+      return deaccent(String(s||''))
+        .toLowerCase()
+        .replace(/&/g,'and')
+        .replace(/[(]["’'a-z \-]+[)]/g,'')
+        .replace(/,.*$/,'')
+        .replace(/the /g,'')
+        .replace(/[^a-z0-9 ]+/g,'')
+        .replace(/\s+/g,' ')
+        .trim();
+    }
+    function centroidOf(feat){
+      try {
+        const c = turf.centroid(feat);
+        const [lng, lat] = c.geometry.coordinates;
+        return { lat, lng };
+      } catch(e){
+        const b = turf.bbox(feat);
+        const lat = (b[1]+b[3])/2;
+        const lng = (b[0]+b[2])/2;
+        return { lat, lng };
+      }
+    }
+    function getId(f){ return f && (f.id || f.properties && (f.properties.name || f.properties.NAME || f.properties.ADMIN)); }
+
+    function setQuestion(text){
+      qText.textContent = text;
+      qnoEl.textContent = qno;
+    }
+
+    function nextQuestion(){
+      if (!dataReady) { showToast('Veriler yükleniyor…'); return; }
+      currentSelection = null;
+      highlightIds.clear();
+      updatePolys();
+      qno += 1;
+      qnoEl.textContent = qno;
+
+      currentTarget = countries[Math.floor(Math.random()*countries.length)];
+      updatePolys();
+
+      const n = getId(currentTarget);
+      const norm = normName(n);
+      const info = restIndex.get(norm) || {};
+      const cap = (info.capital && info.capital[0]) || null;
+      const special = specialHints[norm];
+      const roll = Math.random();
+
+      let qStr = '';
+      if (special && roll < 0.20) {
+        qStr = special;
+      } else if (cap && roll < 0.70) {
+        qStr = `Başkenti ${cap} olan ülke hangisidir?`;
+      } else {
+        qStr = `Hangi ülke? → ${n}`;
+      }
+      setQuestion(qStr);
+    }
+
+    function updatePolys(){
+      globe.polygonCapColor(globe.polygonCapColor());
+      globe.polygonsTransitionDuration(200);
+    }
+
+    function spinToCountry(feat, duration=2000){
+      const {lat,lng} = centroidOf(feat);
+      globe.pointOfView({ lat, lng, altitude: 1.45 }, duration);
+    }
+
+    function handleClick(feat){
+      if (!running || !currentTarget) return;
+      currentSelection = feat;
+      updatePolys();
+
+      const selName = normName(getId(feat));
+      const tgtName = normName(getId(currentTarget));
+      const selInfo = restIndex.get(selName);
+      const tgtInfo = restIndex.get(tgtName);
+
+      const isCorrect = selName === tgtName;
+
+      let gained = 0;
+      let msg = '';
+      if (isCorrect){
+        gained = 3;
+        msg = 'Doğru! +3 puan 👏';
+        showToast(msg);
+        score += gained;
+        scoreEl.textContent = score.toLocaleString('tr-TR');
+        setTimeout(nextQuestion, 900);
+        return;
+      }
+
+      let neighbor = false;
+      try {
+        neighbor = turf.booleanTouches(currentSelection, currentTarget);
+      } catch(e){ neighbor = false; }
+
+      if (neighbor){
+        gained = 2;
+        msg = 'Çok yakındı! Komşu ülkeyi seçtin. +2 puan';
+      } else {
+        const selCont = selInfo && selInfo.continent || null;
+        const tgtCont = tgtInfo && tgtInfo.continent || null;
+        if (selCont && tgtCont && selCont !== tgtCont){
+          gained = 0.5;
+          msg = 'Farklı kıta seçtin. +0.5 puan';
+        } else {
+          gained = 0;
+          msg = 'Maalesef, puan yok.';
+        }
+      }
+
+      score += gained;
+      scoreEl.textContent = score.toLocaleString('tr-TR');
+      showToast(msg);
+
+      highlightIds.add(getId(currentTarget));
+      updatePolys();
+      spinToCountry(currentTarget, 2000);
+
+      const trueName = getId(currentTarget);
+      setQuestion(`Doğru cevap: ${trueName}`);
+      setTimeout(() => {
+        highlightIds.clear();
+        updatePolys();
+        nextQuestion();
+      }, 2000);
+    }
+
+    function startGame(){
+      if (!dataReady){ showToast('Veriler yükleniyor…'); return; }
+      if (running) return;
+      running = true;
+      startOverlay.classList.add('hidden');
+      startBtn.classList.add('hidden');
+      qno = 0; score = 0;
+      scoreEl.textContent = '0';
+      qnoEl.textContent = '-';
+      nextQuestion();
+    }
+
+    howBtn.addEventListener('click', () => {
+      howText.classList.toggle('hidden');
+    });
+    [startBtn, bigStartBtn].forEach(b => b.addEventListener('click', startGame));
+    skipBtn.addEventListener('click', () => { if(running){ nextQuestion(); showToast('Pas geçildi'); }});
+    recenterBtn.addEventListener('click', () => globe.pointOfView({ lat: 20, lng: 0, altitude: 2.1 }, 800));
+
+    const specialHints = {
+      [normName('Turkey')]: 'Ünlü şarkıcı Tarkan\'ın vatandaşı olduğu ülke hangisi?',
+      [normName('Australia')]: 'Kangarusu ile meşhur ülke hangisi?',
+      [normName('Japan')]: 'İkinci Dünya Savaşı\'nda atom bombası atılan ülke hangisi?'
+    };
+
+    // Load data (explicit https URLs)
+    Promise.all([
+      fetch('https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson').then(r => r.json()),
+      fetch('https://restcountries.com/v3.1/all?fields=name,capital,continents,cca3,ccn3,altSpellings').then(r => r.json())
+    ]).then(([world, rest]) => {
+      for (const c of rest){
+        const namesToIndex = new Set();
+        if (c.name && c.name.common) namesToIndex.add(c.name.common);
+        if (c.name && c.name.official) namesToIndex.add(c.name.official);
+        (c.altSpellings || []).forEach(s => namesToIndex.add(s));
+        for (const nm of Array.from(namesToIndex)){
+          const key = normName(nm);
+          if (!key) continue;
+          if (!restIndex.has(key)) {
+            restIndex.set(key, {
+              name: c.name?.common || nm,
+              capital: c.capital || [],
+              continent: (c.continents && c.continents[0]) || null
+            });
+          }
+        }
+      }
+
+      const features = world.features.filter(f => f && f.geometry && f.properties && f.properties.name && f.properties.name !== 'Antarctica');
+      features.forEach(f => { f.id = f.properties.name; });
+      countries = features.filter(f => restIndex.has(normName(f.properties.name)));
+      for (const f of countries){ byName.set(normName(f.properties.name), f); }
+
+      globe.polygonsData(countries);
+
+      // Enable UI once ready
+      dataReady = true;
+      [startBtn, bigStartBtn, skipBtn, recenterBtn].forEach(b => b.removeAttribute('disabled'));
+      recenterBtn.click();
+      qText.textContent = 'Hazırsan başla!';
+    }).catch(err => {
+      console.error(err);
+      qText.textContent = 'Veriler yüklenemedi. İnternet bağlantınızı kontrol edip sayfayı yenileyin.';
+    });
+
+    (function animate(){
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    })();
+  })();
+  </script>
+</body>
+</html>
